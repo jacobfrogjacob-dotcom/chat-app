@@ -7,12 +7,16 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["chat", "realtime", "socket.io"],
+  "keywords": [
+    "chat",
+    "realtime",
+    "socket.io"
+  ],
   "license": "MIT",
   "dependencies": {
-    "sql.js": "^1.11.0",
     "bcryptjs": "^2.4.3",
     "express": "^4.21.0",
+    "pg": "^8.22.0",
     "socket.io": "^4.7.5"
   }
 }
