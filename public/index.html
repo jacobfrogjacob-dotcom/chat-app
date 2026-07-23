@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>打手專用聊天群</title>
   <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="manifest" href="/manifest.json">
   <meta property="og:title" content="打手專用聊天群">
   <meta property="og:description" content="專屬即時聊天室">
   <meta property="og:image" content="https://chat-app-production-1094.up.railway.app/logo.png">
@@ -972,7 +973,52 @@ async function openProfile(username) {
 }
 function closeProfile() { $('profileOverlay').classList.add('hidden'); document.body.style.overflow=''; }
 
+<!-- Install PWA Modal -->
+<div id="installModal" class="fixed inset-0 z-[9999] hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+  <div class="bg-white rounded-3xl max-w-sm w-full p-8 text-center scale-in shadow-2xl">
+    <img src="/logo.png" class="w-20 h-20 rounded-2xl mx-auto mb-4 object-cover shadow-lg">
+    <h2 class="font-display text-2xl font-black text-lux-900 mb-2">加入主畫面</h2>
+    <p class="text-sm text-lux-500 mb-6">將「打手專用聊天群」加入主畫面，像 App 一樣使用</p>
+    <div id="installStepsIOS" class="hidden">
+      <div class="space-y-3 text-left mb-6">
+        <div class="flex items-start gap-3"><span class="shrink-0 w-7 h-7 rounded-full bg-lux-900 text-white text-xs flex items-center justify-center font-bold">1</span><p class="text-sm text-lux-700 pt-0.5">點擊下方 <span class="font-bold">分享按鈕 <span class="inline-block rotate-90">⬆</span></span></p></div>
+        <div class="flex items-start gap-3"><span class="shrink-0 w-7 h-7 rounded-full bg-lux-900 text-white text-xs flex items-center justify-center font-bold">2</span><p class="text-sm text-lux-700 pt-0.5">選擇 <span class="font-bold">「加入主畫面」</span></p></div>
+        <div class="flex items-start gap-3"><span class="shrink-0 w-7 h-7 rounded-full bg-lux-900 text-white text-xs flex items-center justify-center font-bold">3</span><p class="text-sm text-lux-700 pt-0.5">點擊右上角 <span class="font-bold">「加入」</span> 確認</p></div>
+      </div>
+    </div>
+    <div id="installStepsAndroid" class="hidden">
+      <div class="space-y-3 text-left mb-6">
+        <div class="flex items-start gap-3"><span class="shrink-0 w-7 h-7 rounded-full bg-lux-900 text-white text-xs flex items-center justify-center font-bold">1</span><p class="text-sm text-lux-700 pt-0.5">點擊網址列旁 <span class="font-bold">安裝按鈕</span> 或選單中的 <span class="font-bold">「安裝應用程式」</span></p></div>
+        <div class="flex items-start gap-3"><span class="shrink-0 w-7 h-7 rounded-full bg-lux-900 text-white text-xs flex items-center justify-center font-bold">2</span><p class="text-sm text-lux-700 pt-0.5">確認 <span class="font-bold">「安裝」</span></p></div>
+      </div>
+    </div>
+    <button onclick="closeInstallModal()" class="w-full py-3 bg-lux-900 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform">稍後再說</button>
+  </div>
+</div>
+
 checkSession();
+</script>
+<script>
+// PWA install detection
+(function(){
+  const isStandalone=window.navigator.standalone===true||window.matchMedia('(display-mode:standalone)').matches;
+  const dismissed=localStorage.getItem('install_dismissed');
+  if(!isStandalone&&!dismissed){
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroid=/Android/.test(navigator.userAgent);
+    setTimeout(()=>{
+      document.getElementById('installModal').classList.remove('hidden');
+      if(isIOS) document.getElementById('installStepsIOS').classList.remove('hidden');
+      else document.getElementById('installStepsAndroid').classList.remove('hidden');
+    },1500);
+  }
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
+})();
+function closeInstallModal(){
+  document.getElementById('installModal').classList.add('hidden');
+  localStorage.setItem('install_dismissed','1');
+}
 </script>
 </body>
 </html>
