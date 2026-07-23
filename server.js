@@ -173,7 +173,6 @@ async function main() {
     if (!s) return res.status(401).json({ error: '未登入' });
     const { avatar } = req.body;
     if (!avatar) return res.status(400).json({ error: '請選擇圖片' });
-    if (avatar.length > 2000000) return res.status(400).json({ error: '圖片不能超過 2MB' });
     await pool.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, s.userId]);
     res.json({ ok: true, avatar });
   });

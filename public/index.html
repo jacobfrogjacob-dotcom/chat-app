@@ -891,14 +891,24 @@ function closeSettings() { $('settingsOverlay').classList.add('hidden'); documen
 
 async function uploadAvatar(e) {
   const f=e.target.files[0]; if(!f) return;
-  if(f.size>2*1024*1024) return toast('頭像不能超過 2MB');
   const reader=new FileReader();
   reader.onload=async ev=>{
     try {
-      const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({avatar:ev.target.result})});
-      const d=await r.json(); if(!r.ok)return toast(d.error);
-      $('settingsAvatarImg').src=d.avatar;$('settingsAvatarImg').classList.remove('hidden');$('settingsAvatarLetter').classList.add('hidden');
-      toast('頭像已更新');
+      const img=new Image();
+      img.onload=async()=>{
+        const c=document.createElement('canvas');
+        const s=400;
+        let w=img.width,h=img.height;
+        if(w>h){if(w>s){h=h*s/w;w=s;}}else{if(h>s){w=w*s/h;h=s;}}
+        c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        const dataUrl=c.toDataURL('image/jpeg',0.75);
+        const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({avatar:dataUrl})});
+        const d=await r.json(); if(!r.ok)return toast(d.error);
+        $('settingsAvatarImg').src=d.avatar;$('settingsAvatarImg').classList.remove('hidden');$('settingsAvatarLetter').classList.add('hidden');
+        toast('頭像已更新');
+      };
+      img.src=ev.target.result;
     } catch(e){toast('上傳失敗');}
   };
   reader.readAsDataURL(f); e.target.value='';
