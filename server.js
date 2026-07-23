@@ -50,12 +50,36 @@ async function main() {
   )`);
   db.run('INSERT OR IGNORE INTO announcement (id, content) VALUES (1, "")');
 
-  // migrate old tables without nickname/bio/avatar
+  // migrate old tables
   try { db.run('ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ""'); } catch(e) {}
   try { db.run('ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT "這個人很懶，什麼都沒寫"'); } catch(e) {}
   try { db.run('ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ""'); } catch(e) {}
   try { db.run('ALTER TABLE messages ADD COLUMN nickname TEXT NOT NULL DEFAULT ""'); } catch(e) {}
+  try { db.run('ALTER TABLE messages ADD COLUMN reply_to_id INTEGER DEFAULT NULL'); } catch(e) {}
+  try { db.run('ALTER TABLE messages ADD COLUMN reply_to_content TEXT DEFAULT NULL'); } catch(e) {}
+  try { db.run('ALTER TABLE messages ADD COLUMN reply_to_nickname TEXT DEFAULT NULL'); } catch(e) {}
   saveDb();
+
+  // Auto-create admin account if not exists
+  try {
+    const adminUser = queryOne('SELECT id FROM users WHERE username = ?', ['admin']);
+    if (!adminUser) {
+      const adminHash = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'qawsed', 10);
+      runSql('INSERT INTO users (username, password, nickname, role) VALUES (?, ?, ?, ?)', ['admin', adminHash, '管理員', 'admin']);
+      console.log('Auto-created admin account');
+    } else {
+      console.log('Admin account already exists');
+    }
+  } catch(e) {
+    console.error('Admin auto-create failed:', e.message);
+    // Fallback: create directly
+    try {
+      const adminHash = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'qawsed', 10);
+      db.run('INSERT OR IGNORE INTO users (username, password, nickname, role) VALUES (?, ?, ?, ?)', ['admin', adminHash, '管理員', 'admin']);
+      saveDb();
+      console.log('Admin created via fallback');
+    } catch(e2) { console.error('Fallback also failed:', e2.message); }
+  }
 
   const app = express();
   const server = http.createServer(app);
@@ -100,7 +124,7 @@ async function main() {
   // ===== Auth =====
   app.post('/api/register', (req, res) => {
     try {
-      let { username, password } = req.body;
+      let { username, password, nickname } = req.body;
       if (!username || !password) return res.status(400).json({ error: '請填寫帳號與密碼' });
       username = username.toLowerCase().trim();
       if (!USERNAME_RE.test(username)) return res.status(400).json({ error: '帳號僅限英文小寫與數字' });
@@ -112,7 +136,8 @@ async function main() {
 
       const hash = bcrypt.hashSync(password, 10);
       const role = username === 'admin' ? 'admin' : 'user';
-      runSql('INSERT INTO users (username, password, nickname, role) VALUES (?, ?, ?, ?)', [username, hash, username, role]);
+      const nick = (nickname && nickname.trim()) ? nickname.trim() : username;
+      runSql('INSERT INTO users (username, password, nickname, role) VALUES (?, ?, ?, ?)', [username, hash, nick, role]);
       const user = queryOne('SELECT * FROM users WHERE username = ?', [username]);
       const token = createSession(user.id, username, role);
       res.cookie('chat_token', token, { httpOnly: true, maxAge: 86400000 });
@@ -220,7 +245,7 @@ async function main() {
     const rows = queryAll(`
       SELECT m.*, u.avatar, u.nickname as live_nickname
       FROM messages m LEFT JOIN users u ON m.username = u.username
-      ORDER BY m.id DESC LIMIT 80
+      ORDER BY m.id DESC LIMIT 100
     `);
     res.json(rows.reverse());
   });
@@ -233,6 +258,29 @@ async function main() {
       [req.params.username]
     );
     res.json(rows.reverse());
+  });
+
+  app.delete('/api/messages/:id', (req, res) => {
+    const t = extractToken(req);
+    const s = t ? getSession(t) : null;
+    if (!s || s.role !== 'admin') return res.status(403).json({ error: '僅管理員可刪訊息' });
+    const msg = queryOne('SELECT id FROM messages WHERE id = ?', [parseInt(req.params.id)]);
+    if (!msg) return res.status(404).json({ error: '訊息不存在' });
+    runSql('DELETE FROM messages WHERE id = ?', [parseInt(req.params.id)]);
+    io.emit('message_deleted', { id: parseInt(req.params.id) });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/messages/batch-delete', (req, res) => {
+    const t = extractToken(req);
+    const s = t ? getSession(t) : null;
+    if (!s || s.role !== 'admin') return res.status(403).json({ error: '僅管理員可刪訊息' });
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: '未選擇訊息' });
+    const placeholders = ids.map(() => '?').join(',');
+    runSql(`DELETE FROM messages WHERE id IN (${placeholders})`, ids);
+    io.emit('messages_deleted', { ids });
+    res.json({ ok: true, deleted: ids.length });
   });
 
   app.get('/api/announcement', (req, res) => {
@@ -275,17 +323,18 @@ async function main() {
     socket.emit('online_users', onlineList);
 
     socket.on('send_message', (data) => {
-      const { content, type } = data;
+      const { content, type, replyToId, replyToContent, replyToNickname } = data;
       if (!content || !content.trim()) return;
       const u = queryOne('SELECT nickname, avatar FROM users WHERE username = ?', [user.username]);
       const nickname = u ? u.nickname : user.username;
       const avatar = u ? u.avatar : '';
       const now = new Date().toISOString();
       runSql(
-        'INSERT INTO messages (user_id, username, nickname, role, content, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [user.id, user.username, nickname, user.role, content, type || 'text', now]
+        'INSERT INTO messages (user_id, username, nickname, role, content, type, created_at, reply_to_id, reply_to_content, reply_to_nickname) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [user.id, user.username, nickname, user.role, content, type || 'text', now, replyToId || null, replyToContent || null, replyToNickname || null]
       );
-      io.emit('new_message', { username: user.username, nickname, avatar, role: user.role, content, type: type || 'text', created_at: now });
+      const newMsg = queryOne('SELECT * FROM messages WHERE created_at = ? AND username = ? ORDER BY id DESC', [now, user.username]);
+      io.emit('new_message', { id: newMsg.id, username: user.username, nickname, avatar, role: user.role, content, type: type || 'text', created_at: now, reply_to_id: replyToId || null, reply_to_content: replyToContent || null, reply_to_nickname: replyToNickname || null });
     });
 
     socket.on('update_announcement', (data) => {

@@ -111,6 +111,14 @@
     .toast { animation: fadeIn 0.15s ease-out, fadeOut 0.15s ease-in 2.8s forwards; }
     .mention-tag { background: rgba(201,154,46,0.15); color: #b07c24; font-weight: 600; border-radius: 4px; padding: 0 4px; }
     .mention-all { background: rgba(201,154,46,0.25); color: #925c20; font-weight: 700; border-radius: 4px; padding: 0 4px; }
+    .reply-quote { border-left: 3px solid #c99a2e; padding-left: 10px; margin-bottom: 6px; font-size: 11px; color: #737373; background: rgba(201,154,46,0.04); border-radius: 0 6px 6px 0; padding: 6px 10px; }
+    .batch-selected { outline: 2px solid #c99a2e; outline-offset: -2px; background: rgba(201,154,46,0.05) !important; }
+    .context-menu { position: fixed; z-index: 100; background: white; border: 1px solid #e5e5e5; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); overflow: hidden; min-width: 140px; }
+    .context-menu-item { display: flex; align-items: center; gap: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; transition: background 0.1s; }
+    .context-menu-item:hover { background: #f5f5f5; }
+    .context-menu-item.danger { color: #dc2626; }
+    .context-menu-item.danger:hover { background: #fef2f2; }
+    .context-divider { height: 1px; background: #e5e5e5; }
 
     .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
@@ -148,7 +156,8 @@
       </div>
 
       <div id="formRegister" class="hidden space-y-3">
-        <input type="text" id="regUser" placeholder="帳號（小寫英文+數字）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+        <input type="text" id="regUser" placeholder="帳號（登入用，小寫英文+數字）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+        <input type="text" id="regNick" placeholder="暱稱（聊天顯示用）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
         <input type="password" id="regPass" placeholder="密碼（至少4字）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
         <input type="password" id="regPass2" placeholder="確認密碼" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400" onkeydown="if(event.key==='Enter')doRegister()">
         <button onclick="doRegister()" class="btn-lux w-full py-3 rounded-xl text-sm font-semibold text-white">註冊</button>
@@ -205,6 +214,17 @@
 
   <!-- Input -->
   <div class="relative px-3 sm:px-4 py-3 bg-white border-t border-lux-200 shrink-0 safe-bottom">
+    <!-- Reply Preview -->
+    <div id="replyPreview" class="hidden mb-2 flex items-center gap-2 p-2 rounded-xl bg-gold-50 border border-gold-200/50">
+      <div class="w-0.5 h-8 bg-gold-400 rounded-full shrink-0"></div>
+      <div class="min-w-0 flex-1">
+        <p class="text-[10px] font-semibold text-gold-700" id="replyToName"></p>
+        <p class="text-[11px] text-lux-500 truncate" id="replyToText"></p>
+      </div>
+      <button onclick="cancelReply()" class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-lux-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
     <!-- Mention Dropdown -->
     <div id="mentionDropdown" class="hidden absolute bottom-full left-3 right-3 mb-2 bg-white border border-lux-200 rounded-xl shadow-xl max-h-48 overflow-y-auto z-30">
     </div>
@@ -348,6 +368,23 @@
   </div>
 </div>
 
+<!-- Context Menu -->
+<div id="ctxMenu" class="context-menu hidden"></div>
+
+<!-- Batch Delete Bar -->
+<div id="batchBar" class="hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-lux-200 px-4 py-3 safe-bottom">
+  <div class="flex items-center justify-between max-w-lg mx-auto">
+    <div class="flex items-center gap-3">
+      <button onclick="selectAllBatch()" class="text-xs text-brand-600 font-semibold hover:text-brand-700">全選</button>
+      <span class="text-xs text-lux-400">已選 <span id="batchCount">0</span> 則</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="exitBatchMode()" class="px-3 py-1.5 rounded-lg text-xs text-lux-500 hover:bg-lux-100">取消</button>
+      <button onclick="executeBatchDelete()" class="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600">刪除</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-xl bg-lux-900 text-white text-xs font-medium shadow-xl toast pointer-events-none"></div>
 
@@ -392,11 +429,11 @@ async function doLogin() {
 
 async function doRegister() {
   $('authErr').classList.add('hidden');
-  const u=$('regUser').value.trim(), p=$('regPass').value, p2=$('regPass2').value;
+  const u=$('regUser').value.trim(), nick=$('regNick').value.trim(), p=$('regPass').value, p2=$('regPass2').value;
   if (!u||!p) return authErr('請填寫帳號與密碼');
   if (p!==p2) return authErr('兩次密碼不一致');
   try {
-    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,nickname:nick||u,password:p})});
     const d=await r.json();
     if (!r.ok) return authErr(d.error);
     enterChat(d.username,d.nickname,d.role);
@@ -440,6 +477,8 @@ function initSocket() {
     appendMsg(m); scrollBottom();
     if (m.type==='text') checkMention(m.content);
   });
+  socket.on('message_deleted', d => handleDeletedMsg(d.id));
+  socket.on('messages_deleted', d => handleDeletedMsgs(d.ids));
   socket.on('announcement_updated', d => updateAnn(d.content));
   socket.on('online_users', list => { onlineUserList = list || []; });
   socket.on('nickname_updated', d => {
@@ -471,6 +510,7 @@ function appendMsg(m) {
   const avatar=m.avatar||'';
   const div=document.createElement('div');
   div.className=`flex ${isOwn?'justify-end':'justify-start'} fade-in`;
+  if (m.id) div.dataset.msgId = m.id;
 
   if (m.type==='system') {
     div.innerHTML=`<div class="w-full text-center py-1"><span class="text-[10px] text-lux-400">${esc(m.content)}</span></div>`;
@@ -479,6 +519,13 @@ function appendMsg(m) {
       ? `<img src="${esc(m.content)}" class="max-w-[220px] sm:max-w-xs max-h-56 rounded-xl mt-1 cursor-pointer active:scale-[0.98] transition-transform" onclick="window.open(this.src)" loading="lazy">`
       : `<p class="text-[13px] leading-relaxed break-words">${parseMentions(m.content)}</p>`;
     const roleBadge = isAdmin ? `<span class="admin-badge text-[7px] px-1 py-px rounded font-bold leading-none">ADM</span>` : '';
+
+    let replyHtml = '';
+    if (m.reply_to_id && m.reply_to_content) {
+      const rNick = m.reply_to_nickname || '訊息已刪除';
+      const rText = m.type === 'image' ? '[圖片]' : esc(m.reply_to_content).substring(0, 80);
+      replyHtml = `<div class="reply-quote"><span class="font-semibold text-gold-700">${esc(rNick)}</span><br>${rText}</div>`;
+    }
 
     let avatarHtml = '';
     if (!isOwn) {
@@ -489,14 +536,18 @@ function appendMsg(m) {
       }
     }
 
+    const msgData = { content: m.content, nickname: name, type: m.type };
+
     div.innerHTML = `
       <div class="flex gap-2 max-w-[82%] sm:max-w-[72%] ${isOwn?'flex-row-reverse':''}">
         ${avatarHtml}
         <div class="min-w-0">
           ${!isOwn ? `<div class="flex items-center gap-1.5 mb-0.5">${roleBadge}<span class="text-[10px] font-medium ${isAdmin?'text-gold-600':'text-lux-500'} cursor-pointer hover:text-gold-500 transition-colors" onclick="openProfile('${esc(m.username)}')">${esc(name)}</span><span class="text-[9px] text-lux-400">${time}</span></div>` : `<div class="flex items-center justify-end gap-1.5 mb-0.5"><span class="text-[9px] text-lux-400">${time}</span></div>`}
-          <div class="${isOwn?'msg-own':'msg-other'} rounded-2xl ${isOwn?'rounded-tr-md':'rounded-tl-md'} px-3.5 py-2.5">${contentHtml}</div>
+          <div class="${isOwn?'msg-own':'msg-other'} rounded-2xl ${isOwn?'rounded-tr-md':'rounded-tl-md'} px-3.5 py-2.5">${replyHtml}${contentHtml}</div>
         </div>
       </div>`;
+
+    setupLongPress(div.querySelector('.min-w-0'), m.id, msgData);
   }
   box.appendChild(div);
 }
@@ -504,8 +555,10 @@ function appendMsg(m) {
 function sendMsg() {
   const input=$('msgInput'), text=input.value.trim();
   hideMention();
-  if (pendingImg) { socket.emit('send_message',{content:pendingImg,type:'image'}); clearImg(); }
-  if (text) { socket.emit('send_message',{content:text,type:'text'}); input.value=''; }
+  const replyData = replyTarget ? { replyToId: replyTarget.id, replyToContent: replyTarget.content, replyToNickname: replyTarget.nickname } : {};
+  cancelReply();
+  if (pendingImg) { socket.emit('send_message',{content:pendingImg,type:'image',...replyData}); clearImg(); }
+  if (text) { socket.emit('send_message',{content:text,type:'text',...replyData}); input.value=''; }
   input.focus();
 }
 
@@ -658,6 +711,155 @@ function handleImg(e) {
 }
 function clearImg() { pendingImg=null; $('prevImg').src=''; $('imgPreview').classList.add('hidden'); }
 function scrollBottom() { const c=$('msgBox'); setTimeout(()=>c.scrollTop=c.scrollHeight,50); }
+
+// ===== Context Menu / Long Press =====
+let longPressTimer = null, longPressMsgId = null, longPressMsgData = null;
+let batchMode = false, batchSelected = new Set();
+let replyTarget = null;
+
+function setupLongPress(el, msgId, msgData) {
+  const start = (e) => {
+    longPressTimer = setTimeout(() => {
+      e.preventDefault();
+      showCtxMenu(e, msgId, msgData);
+    }, 500);
+  };
+  const cancel = () => { clearTimeout(longPressTimer); };
+  el.addEventListener('mousedown', start);
+  el.addEventListener('touchstart', start, { passive: true });
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchmove', cancel);
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(longPressTimer); showCtxMenu(e, msgId, msgData); });
+}
+
+function showCtxMenu(e, msgId, msgData) {
+  if (batchMode) return;
+  const menu = $('ctxMenu');
+  longPressMsgId = msgId;
+  longPressMsgData = msgData;
+
+  let items = '';
+  items += `<div class="context-menu-item" onclick="doReply()"><svg class="w-4 h-4 text-lux-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4"/></svg>回覆</div>`;
+  if (currentUser.role === 'admin') {
+    items += `<div class="context-divider"></div>`;
+    items += `<div class="context-menu-item danger" onclick="doDeleteMsg()"><svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>刪除</div>`;
+    items += `<div class="context-menu-item" onclick="enterBatchMode()"><svg class="w-4 h-4 text-lux-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>批次刪除</div>`;
+  }
+  menu.innerHTML = items;
+  menu.classList.remove('hidden');
+
+  const x = e.touches ? e.touches[0].clientX : e.clientX;
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const menuW = 160, menuH = menu.children.length * 42;
+  menu.style.left = Math.min(x, window.innerWidth - menuW - 8) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - menuH - 8) + 'px';
+}
+
+document.addEventListener('click', (e) => {
+  const menu = $('ctxMenu');
+  if (!menu.classList.contains('hidden') && !menu.contains(e.target)) {
+    menu.classList.add('hidden');
+  }
+});
+
+function doReply() {
+  $('ctxMenu').classList.add('hidden');
+  if (!longPressMsgData) return;
+  replyTarget = {
+    id: longPressMsgId,
+    content: longPressMsgData.content,
+    nickname: longPressMsgData.nickname || longPressMsgData.username
+  };
+  $('replyToName').textContent = '回覆 ' + replyTarget.nickname;
+  $('replyToText').textContent = longPressMsgData.type === 'image' ? '[圖片]' : replyTarget.content;
+  $('replyPreview').classList.remove('hidden');
+  $('msgInput').focus();
+}
+
+function cancelReply() {
+  replyTarget = null;
+  $('replyPreview').classList.add('hidden');
+}
+
+function doDeleteMsg() {
+  $('ctxMenu').classList.add('hidden');
+  if (!longPressMsgId) return;
+  fetch(`/api/messages/${longPressMsgId}`, { method: 'DELETE' })
+    .then(r => r.json()).then(d => { if (!d.ok) toast(d.error); });
+}
+
+// ===== Batch Delete =====
+function enterBatchMode() {
+  $('ctxMenu').classList.add('hidden');
+  batchMode = true;
+  batchSelected.clear();
+  $('batchBar').classList.remove('hidden');
+  $('batchCount').textContent = '0';
+  document.querySelectorAll('[data-msg-id]').forEach(el => {
+    el.classList.remove('batch-selected');
+    el.addEventListener('click', toggleBatchSelect);
+  });
+}
+
+function exitBatchMode() {
+  batchMode = false;
+  batchSelected.clear();
+  $('batchBar').classList.add('hidden');
+  document.querySelectorAll('[data-msg-id]').forEach(el => {
+    el.classList.remove('batch-selected');
+    el.removeEventListener('click', toggleBatchSelect);
+  });
+}
+
+function toggleBatchSelect(e) {
+  if (!batchMode) return;
+  e.stopPropagation();
+  const el = e.currentTarget;
+  const id = parseInt(el.dataset.msgId);
+  if (batchSelected.has(id)) {
+    batchSelected.delete(id);
+    el.classList.remove('batch-selected');
+  } else {
+    batchSelected.add(id);
+    el.classList.add('batch-selected');
+  }
+  $('batchCount').textContent = batchSelected.size;
+}
+
+function selectAllBatch() {
+  document.querySelectorAll('[data-msg-id]').forEach(el => {
+    const id = parseInt(el.dataset.msgId);
+    batchSelected.add(id);
+    el.classList.add('batch-selected');
+  });
+  $('batchCount').textContent = batchSelected.size;
+}
+
+function executeBatchDelete() {
+  if (batchSelected.size === 0) return toast('未選擇訊息');
+  const ids = Array.from(batchSelected);
+  fetch('/api/messages/batch-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) return toast(d.error);
+    toast(`已刪除 ${d.deleted} 則訊息`);
+    exitBatchMode();
+  });
+}
+
+// ===== Delete from socket =====
+function handleDeletedMsg(id) {
+  const el = document.querySelector(`[data-msg-id="${id}"]`);
+  if (el) { el.style.opacity = '0'; el.style.transform = 'translateX(-20px)'; el.style.transition = 'all 0.2s'; setTimeout(() => el.remove(), 200); }
+}
+
+function handleDeletedMsgs(ids) {
+  ids.forEach(id => handleDeletedMsg(id));
+}
 function publishAnn() { if(currentUser.role!=='admin')return; socket.emit('update_announcement',{content:$('annInput').value.trim()}); }
 function updateAnn(c) {
   const el=$('annContent');
