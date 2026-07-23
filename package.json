@@ -1,0 +1,18 @@
+{
+  "name": "chat-app",
+  "version": "1.0.0",
+  "description": "打手專用聊天群 - 即時聊天系統",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["chat", "realtime", "socket.io"],
+  "license": "MIT",
+  "dependencies": {
+    "sql.js": "^1.11.0",
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5"
+  }
+}

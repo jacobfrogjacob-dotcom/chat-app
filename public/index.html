@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>打手專用聊天群</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gold: { 50:'#fdf9ef',100:'#f9f0d4',200:'#f2dea5',300:'#e8c66d',400:'#dfb040',500:'#c99a2e',600:'#b07c24',700:'#925c20',800:'#784a21',900:'#643e1f', DEFAULT:'#c99a2e' },
+            lux: { 50:'#fafafa',100:'#f5f5f5',200:'#e5e5e5',300:'#d4d4d4',400:'#a3a3a3',500:'#737373',600:'#525252',700:'#404040',800:'#262626',900:'#171717',950:'#0a0a0a' }
+          },
+          fontFamily: { display:['Playfair Display','serif'], sans:['Inter','system-ui','sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background: #fafafa; overscroll-behavior: none; }
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #c99a2e; border-radius: 2px; }
+
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes scaleIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    .slide-up { animation: slideUp 0.35s cubic-bezier(0.16,1,0.3,1); }
+    .fade-in { animation: fadeIn 0.2s ease-out; }
+    .scale-in { animation: scaleIn 0.2s cubic-bezier(0.16,1,0.3,1); }
+
+    .msg-own {
+      background: linear-gradient(135deg, #171717, #262626);
+      color: #f5f5f5;
+      border: 1px solid rgba(201,154,46,0.15);
+    }
+    .msg-other {
+      background: #ffffff;
+      border: 1px solid #e5e5e5;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .btn-lux {
+      background: linear-gradient(135deg, #171717, #262626);
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .btn-lux:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.25); transform: translateY(-1px); }
+    .btn-lux:active { transform: translateY(0); }
+
+    .btn-gold {
+      background: linear-gradient(135deg, #c99a2e, #dfb040);
+      color: #171717;
+      font-weight: 700;
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(201,154,46,0.3);
+    }
+    .btn-gold:hover { box-shadow: 0 4px 16px rgba(201,154,46,0.4); transform: translateY(-1px); }
+
+    .input-lux {
+      background: #ffffff;
+      border: 1.5px solid #e5e5e5;
+      transition: all 0.2s;
+    }
+    .input-lux:focus {
+      border-color: #c99a2e;
+      box-shadow: 0 0 0 3px rgba(201,154,46,0.1);
+      outline: none;
+    }
+
+    .announcement-bar {
+      background: linear-gradient(90deg, #171717, #262626, #171717);
+      border-bottom: 1px solid rgba(201,154,46,0.2);
+    }
+
+    .card-lux {
+      background: #ffffff;
+      border: 1px solid #e5e5e5;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+    }
+
+    .avatar-ring { box-shadow: 0 0 0 2.5px #ffffff, 0 0 0 4px #171717; }
+    .avatar-ring-gold { box-shadow: 0 0 0 2.5px #ffffff, 0 0 0 4px #c99a2e; }
+
+    .admin-badge { background: linear-gradient(135deg, #c99a2e, #dfb040); color: #171717; }
+
+    .gold-divider { background: linear-gradient(90deg, transparent, #c99a2e, transparent); height: 1px; }
+
+    .profile-banner {
+      background: linear-gradient(135deg, #0a0a0a 0%, #171717 40%, #262626 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .profile-banner::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 70% 20%, rgba(201,154,46,0.15), transparent 60%);
+    }
+
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+    .toast { animation: fadeIn 0.15s ease-out, fadeOut 0.15s ease-in 2.8s forwards; }
+    .mention-tag { background: rgba(201,154,46,0.15); color: #b07c24; font-weight: 600; border-radius: 4px; padding: 0 4px; }
+    .mention-all { background: rgba(201,154,46,0.25); color: #925c20; font-weight: 700; border-radius: 4px; padding: 0 4px; }
+
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    .shimmer-gold {
+      background: linear-gradient(90deg, transparent 0%, rgba(201,154,46,0.08) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 3s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="text-lux-800 min-h-screen select-none">
+
+<!-- ======================== 認證頁 ======================== -->
+<div id="authPage" class="min-h-[100dvh] flex items-center justify-center p-5 bg-gradient-to-b from-white to-lux-100">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-10">
+      <div class="w-20 h-20 mx-auto mb-5 rounded-2xl overflow-hidden shadow-lg">
+        <img src="/logo.png" class="w-full h-full object-cover" alt="Logo">
+      </div>
+      <h1 class="text-3xl font-black text-lux-900 font-display tracking-tight">打手聊天群</h1>
+      <div class="gold-divider w-16 mx-auto mt-3"></div>
+      <p class="text-lux-400 text-xs mt-3 tracking-widest uppercase">Premium Chat</p>
+    </div>
+
+    <div class="card-lux rounded-2xl p-6">
+      <div class="flex mb-6 bg-lux-100 rounded-xl p-1">
+        <button onclick="switchTab('login')" id="tabLogin" class="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all bg-lux-900 text-white shadow-sm">登入</button>
+        <button onclick="switchTab('register')" id="tabRegister" class="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all text-lux-500">註冊</button>
+      </div>
+
+      <div id="formLogin" class="space-y-3">
+        <input type="text" id="loginUser" placeholder="帳號" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+        <input type="password" id="loginPass" placeholder="密碼" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400" onkeydown="if(event.key==='Enter')doLogin()">
+        <button onclick="doLogin()" class="btn-lux w-full py-3 rounded-xl text-sm font-semibold text-white">登入</button>
+      </div>
+
+      <div id="formRegister" class="hidden space-y-3">
+        <input type="text" id="regUser" placeholder="帳號（小寫英文+數字）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+        <input type="password" id="regPass" placeholder="密碼（至少4字）" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+        <input type="password" id="regPass2" placeholder="確認密碼" class="input-lux w-full px-4 py-3 rounded-xl text-sm text-lux-900 placeholder-lux-400" onkeydown="if(event.key==='Enter')doRegister()">
+        <button onclick="doRegister()" class="btn-lux w-full py-3 rounded-xl text-sm font-semibold text-white">註冊</button>
+      </div>
+
+      <div id="authErr" class="hidden mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs text-center"></div>
+    </div>
+
+    <p class="text-center text-[10px] text-lux-400 mt-6 tracking-wide">&copy; 打手專用聊天群</p>
+  </div>
+</div>
+
+<!-- ======================== 聊天室 ======================== -->
+<div id="chatPage" class="hidden h-[100dvh] flex flex-col bg-white">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-4 py-3 bg-lux-900 shrink-0 safe-bottom">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl overflow-hidden shrink-0 shadow-md">
+        <img src="/logo.png" class="w-full h-full object-cover" alt="Logo">
+      </div>
+      <div>
+        <h1 class="text-sm font-bold text-white leading-tight font-display tracking-wide">打手聊天群</h1>
+        <span class="text-[10px] text-lux-400"><span id="onlineCount">0</span> 人在線</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <button onclick="openSettings()" class="w-8 h-8 rounded-lg flex items-center justify-center text-lux-400 hover:text-gold-400 hover:bg-lux-800 transition-colors">
+        <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+      </button>
+      <button onclick="doLogout()" class="text-[10px] text-lux-500 hover:text-red-500 px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors">登出</button>
+    </div>
+  </header>
+
+  <!-- Announcement -->
+  <div class="announcement-bar px-4 py-3.5 shrink-0">
+    <div class="flex items-center gap-3">
+      <span class="text-gold-400 text-sm font-bold shrink-0">📢 公告</span>
+      <p id="annContent" class="text-sm text-lux-200 flex-1 break-words leading-relaxed">暫無公告</p>
+    </div>
+  </div>
+
+  <!-- Admin Panel -->
+  <div id="adminPanel" class="hidden px-4 py-2.5 bg-white border-b border-lux-200 shrink-0">
+    <div class="flex items-center gap-2">
+      <span class="text-[9px] text-gold-600 font-bold shrink-0 tracking-wider">ADMIN</span>
+      <input type="text" id="annInput" placeholder="輸入新公告..." class="input-lux flex-1 px-3 py-1.5 rounded-lg text-xs text-lux-900 placeholder-lux-400">
+      <button onclick="publishAnn()" class="shrink-0 btn-gold px-3 py-1.5 rounded-lg text-[10px] font-bold">發布</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div id="msgBox" class="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-2.5 min-h-0 bg-lux-50"></div>
+
+  <!-- Input -->
+  <div class="relative px-3 sm:px-4 py-3 bg-white border-t border-lux-200 shrink-0 safe-bottom">
+    <!-- Mention Dropdown -->
+    <div id="mentionDropdown" class="hidden absolute bottom-full left-3 right-3 mb-2 bg-white border border-lux-200 rounded-xl shadow-xl max-h-48 overflow-y-auto z-30">
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="toggleMention()" class="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center bg-lux-100 border border-lux-200 hover:border-gold-400 hover:bg-gold-50 transition-all text-lux-500 hover:text-gold-600 text-sm font-bold" title="@ 提及">@</button>
+      <label class="shrink-0 cursor-pointer w-9 h-9 rounded-xl flex items-center justify-center bg-lux-100 border border-lux-200 hover:border-gold-400 hover:bg-gold-50 transition-all" title="上傳圖片">
+        <svg class="w-4 h-4 text-lux-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <input type="file" id="imgInput" accept="image/*" class="hidden" onchange="handleImg(event)">
+      </label>
+      <input type="text" id="msgInput" placeholder="輸入訊息..." class="input-lux flex-1 px-4 py-2.5 rounded-xl text-sm text-lux-900 placeholder-lux-400" onkeydown="handleInputKey(event)" oninput="handleInput()">
+      <button onclick="sendMsg()" class="shrink-0 btn-lux px-4 h-9 rounded-xl text-sm font-semibold text-white">發送</button>
+    </div>
+    <div id="imgPreview" class="hidden mt-2 flex items-center gap-2 p-2 rounded-xl bg-lux-50 border border-lux-200">
+      <img id="prevImg" class="h-16 rounded-lg object-cover">
+      <div class="flex-1 min-w-0"><p class="text-[10px] text-lux-500 truncate">已選擇圖片</p></div>
+      <button onclick="clearImg()" class="text-[10px] text-red-500 hover:text-red-600 px-2">移除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== 設定面板 ======================== -->
+<div id="settingsOverlay" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)closeSettings()">
+  <div class="absolute inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center">
+    <div class="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90dvh] overflow-y-auto slide-up safe-bottom shadow-2xl">
+      <!-- Header -->
+      <div class="sticky top-0 bg-white/95 backdrop-blur-sm px-5 py-4 border-b border-lux-200 flex items-center justify-between z-10">
+        <h2 class="text-base font-bold text-lux-900 font-display">設定</h2>
+        <button onclick="closeSettings()" class="w-8 h-8 rounded-lg flex items-center justify-center text-lux-400 hover:text-lux-700 hover:bg-lux-100 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-5">
+        <!-- Avatar -->
+        <div class="flex items-center gap-4">
+          <div class="relative">
+            <div id="settingsAvatar" class="w-16 h-16 rounded-2xl bg-lux-100 flex items-center justify-center text-xl font-bold text-lux-600 overflow-hidden avatar-ring">
+              <span id="settingsAvatarLetter">?</span>
+              <img id="settingsAvatarImg" class="hidden w-full h-full object-cover">
+            </div>
+            <label class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-lux-900 flex items-center justify-center cursor-pointer border-2 border-white shadow-sm hover:bg-gold-600 transition-colors">
+              <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              <input type="file" accept="image/*" class="hidden" onchange="uploadAvatar(event)">
+            </label>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-lux-900" id="settingsDispName">-</p>
+            <p class="text-[11px] text-lux-400" id="settingsUsername">@-</p>
+          </div>
+        </div>
+
+        <!-- Nickname -->
+        <div>
+          <label class="block text-[11px] text-lux-500 mb-1.5 font-semibold uppercase tracking-wider">暱稱</label>
+          <div class="flex gap-2">
+            <input type="text" id="setNickname" maxlength="20" class="input-lux flex-1 px-3 py-2.5 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+            <button onclick="saveNickname()" class="shrink-0 btn-lux px-4 py-2.5 rounded-xl text-xs font-semibold text-white">儲存</button>
+          </div>
+        </div>
+
+        <!-- Bio -->
+        <div>
+          <label class="block text-[11px] text-lux-500 mb-1.5 font-semibold uppercase tracking-wider">個人簡介</label>
+          <div class="flex gap-2">
+            <input type="text" id="setBio" maxlength="100" placeholder="介紹一下自己..." class="input-lux flex-1 px-3 py-2.5 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+            <button onclick="saveBio()" class="shrink-0 btn-lux px-4 py-2.5 rounded-xl text-xs font-semibold text-white">儲存</button>
+          </div>
+        </div>
+
+        <!-- Password -->
+        <div class="border-t border-lux-200 pt-5">
+          <label class="block text-[11px] text-lux-500 mb-1.5 font-semibold uppercase tracking-wider">變更密碼</label>
+          <div class="space-y-2">
+            <input type="password" id="setOldPass" placeholder="目前密碼" class="input-lux w-full px-3 py-2.5 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+            <input type="password" id="setNewPass" placeholder="新密碼（至少4字）" class="input-lux w-full px-3 py-2.5 rounded-xl text-sm text-lux-900 placeholder-lux-400">
+            <button onclick="savePassword()" class="btn-gold w-full py-2.5 rounded-xl text-xs font-bold">更新密碼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== 用戶資料 Modal ======================== -->
+<div id="profileOverlay" class="hidden fixed inset-0 z-50" onclick="if(event.target===this)closeProfile()">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-md" onclick="closeProfile()"></div>
+  <div class="absolute inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center">
+    <div id="profileCard" class="w-full sm:max-w-sm sm:rounded-2xl rounded-t-3xl max-h-[92dvh] overflow-hidden slide-up safe-bottom relative shadow-2xl bg-white">
+
+      <!-- Close -->
+      <button onclick="closeProfile()" class="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <!-- Banner -->
+      <div class="profile-banner h-32 relative">
+        <div class="absolute inset-0 flex items-end p-4 z-10">
+          <div class="flex items-end gap-3 w-full">
+            <div id="profileAvatar" class="w-18 h-18 -mb-8 rounded-2xl bg-white flex items-center justify-center text-2xl font-black text-lux-700 overflow-hidden avatar-ring-gold shadow-xl" style="width:5rem;height:5rem;">
+              <span id="profileAvatarLetter">?</span>
+              <img id="profileAvatarImg" class="hidden w-full h-full object-cover">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="px-5 pt-12 pb-5">
+        <div class="flex items-center gap-2 mb-0.5">
+          <h3 id="profileNick" class="text-lg font-bold text-lux-900 font-display">-</h3>
+          <span id="profileRoleBadge" class="hidden admin-badge text-[8px] px-1.5 py-0.5 rounded font-bold">管理員</span>
+        </div>
+        <p id="profileUsername" class="text-xs text-lux-400 mb-3">@-</p>
+
+        <div class="gold-divider mb-3"></div>
+
+        <p id="profileBio" class="text-sm text-lux-600 mb-4 leading-relaxed">-</p>
+
+        <div class="flex items-center gap-6 mb-5">
+          <div class="text-center">
+            <p id="profileMsgCount" class="text-xl font-bold text-lux-900">0</p>
+            <p class="text-[10px] text-lux-400 uppercase tracking-wider">訊息</p>
+          </div>
+          <div class="text-center">
+            <div class="flex items-center gap-1.5">
+              <span id="profileOnlineDot" class="w-2 h-2 rounded-full bg-lux-300"></span>
+              <p id="profileOnlineText" class="text-xs text-lux-400">離線</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Messages -->
+        <div>
+          <p class="text-[10px] text-lux-400 font-semibold mb-2 uppercase tracking-widest">最近訊息</p>
+          <div id="profileMessages" class="space-y-1.5 max-h-44 overflow-y-auto">
+            <p class="text-xs text-lux-400">載入中...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-xl bg-lux-900 text-white text-xs font-medium shadow-xl toast pointer-events-none"></div>
+
+<script>
+let socket = null, currentUser = null, pendingImg = null;
+
+const $ = id => document.getElementById(id);
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+function fmtTime(iso) {
+  try {
+    const d = new Date(iso), n = new Date();
+    const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+    if (d.toDateString() === n.toDateString()) return `${hh}:${mm}`;
+    return `${d.getMonth()+1}/${d.getDate()} ${hh}:${mm}`;
+  } catch(e) { return ''; }
+}
+function getInitial(name) { return (name || '?').charAt(0).toUpperCase(); }
+let toastTmr;
+function toast(msg) { const e=$('toast'); e.textContent=msg; e.classList.remove('hidden'); clearTimeout(toastTmr); toastTmr=setTimeout(()=>e.classList.add('hidden'),3000); }
+
+// ===== Auth =====
+function switchTab(t) {
+  $('formLogin').classList.toggle('hidden', t!=='login');
+  $('formRegister').classList.toggle('hidden', t!=='register');
+  $('tabLogin').className = t==='login' ? 'flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all bg-lux-900 text-white shadow-sm' : 'flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all text-lux-500';
+  $('tabRegister').className = t==='register' ? 'flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all bg-lux-900 text-white shadow-sm' : 'flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all text-lux-500';
+  $('authErr').classList.add('hidden');
+}
+function authErr(m) { const e=$('authErr'); e.textContent=m; e.classList.remove('hidden'); }
+
+async function doLogin() {
+  $('authErr').classList.add('hidden');
+  const u=$('loginUser').value.trim(), p=$('loginPass').value;
+  if (!u||!p) return authErr('請填寫帳號與密碼');
+  try {
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const d=await r.json();
+    if (!r.ok) return authErr(d.error);
+    enterChat(d.username,d.nickname,d.role);
+  } catch(e) { authErr('連線失敗'); }
+}
+
+async function doRegister() {
+  $('authErr').classList.add('hidden');
+  const u=$('regUser').value.trim(), p=$('regPass').value, p2=$('regPass2').value;
+  if (!u||!p) return authErr('請填寫帳號與密碼');
+  if (p!==p2) return authErr('兩次密碼不一致');
+  try {
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const d=await r.json();
+    if (!r.ok) return authErr(d.error);
+    enterChat(d.username,d.nickname,d.role);
+  } catch(e) { authErr('連線失敗'); }
+}
+
+async function doLogout() {
+  if (socket) socket.disconnect();
+  await fetch('/api/logout',{method:'POST'});
+  currentUser=null; pendingImg=null;
+  $('chatPage').classList.add('hidden'); $('authPage').classList.remove('hidden');
+  $('loginUser').value=''; $('loginPass').value='';
+}
+
+async function checkSession() {
+  try { const r=await fetch('/api/me'); if(r.ok){const d=await r.json();enterChat(d.username,d.nickname,d.role);} } catch(e) {}
+}
+
+// ===== Chat =====
+function enterChat(username, nickname, role) {
+  currentUser = { username, nickname: nickname||username, role };
+  $('authPage').classList.add('hidden'); $('chatPage').classList.remove('hidden');
+  $('adminPanel').classList.toggle('hidden', role!=='admin');
+  initSocket(); loadHistory(); loadAnnouncement();
+}
+
+function initSocket() {
+  if (socket) socket.disconnect();
+  socket = io();
+  socket.on('connect', () => socket.emit('authenticate',{username:currentUser.username,role:currentUser.role}));
+  socket.on('online_count', c => $('onlineCount').textContent = c);
+  socket.on('user_joined', d => {
+    if(d.username!==currentUser.username) toast(`${d.username} 加入了`);
+    if(d.user_info) { onlineUserList = onlineUserList.filter(u=>u.username!==d.username); onlineUserList.push(d.user_info); }
+  });
+  socket.on('user_left', d => {
+    toast(`${d.username} 離開了`);
+    onlineUserList = onlineUserList.filter(u=>u.username!==d.username);
+  });
+  socket.on('new_message', m => {
+    appendMsg(m); scrollBottom();
+    if (m.type==='text') checkMention(m.content);
+  });
+  socket.on('announcement_updated', d => updateAnn(d.content));
+  socket.on('online_users', list => { onlineUserList = list || []; });
+  socket.on('nickname_updated', d => {
+    if(d.username===currentUser.username) currentUser.nickname=d.nickname;
+    const u = onlineUserList.find(x=>x.username===d.username);
+    if(u) u.nickname = d.nickname;
+  });
+  socket.on('connect_error', () => toast('連線中斷'));
+}
+
+async function loadHistory() {
+  try {
+    const r=await fetch('/api/messages'); const msgs=await r.json();
+    $('msgBox').innerHTML=''; msgs.forEach(m=>appendMsg(m)); scrollBottom();
+  } catch(e) {}
+}
+
+async function loadAnnouncement() {
+  try {
+    const r=await fetch('/api/announcement'); const d=await r.json();
+    updateAnn(d.content);
+    if(currentUser.role==='admin') $('annInput').value=d.content||'';
+  } catch(e) {}
+}
+
+function appendMsg(m) {
+  const box=$('msgBox'), isOwn=m.username===currentUser.username, isAdmin=m.role==='admin';
+  const name=m.nickname||m.live_nickname||m.username, initial=getInitial(name), time=fmtTime(m.created_at);
+  const avatar=m.avatar||'';
+  const div=document.createElement('div');
+  div.className=`flex ${isOwn?'justify-end':'justify-start'} fade-in`;
+
+  if (m.type==='system') {
+    div.innerHTML=`<div class="w-full text-center py-1"><span class="text-[10px] text-lux-400">${esc(m.content)}</span></div>`;
+  } else {
+    const contentHtml = m.type==='image'
+      ? `<img src="${esc(m.content)}" class="max-w-[220px] sm:max-w-xs max-h-56 rounded-xl mt-1 cursor-pointer active:scale-[0.98] transition-transform" onclick="window.open(this.src)" loading="lazy">`
+      : `<p class="text-[13px] leading-relaxed break-words">${parseMentions(m.content)}</p>`;
+    const roleBadge = isAdmin ? `<span class="admin-badge text-[7px] px-1 py-px rounded font-bold leading-none">ADM</span>` : '';
+
+    let avatarHtml = '';
+    if (!isOwn) {
+      if (avatar) {
+        avatarHtml = `<div onclick="openProfile('${esc(m.username)}')" class="shrink-0 w-8 h-8 rounded-xl overflow-hidden cursor-pointer active:scale-95 transition-all hover:ring-2 hover:ring-gold-400"><img src="${esc(avatar)}" class="w-full h-full object-cover"></div>`;
+      } else {
+        avatarHtml = `<div onclick="openProfile('${esc(m.username)}')" class="shrink-0 w-8 h-8 rounded-xl bg-lux-200 flex items-center justify-center text-[10px] font-bold text-lux-600 cursor-pointer active:scale-95 transition-all hover:ring-2 hover:ring-gold-400"><span>${initial}</span></div>`;
+      }
+    }
+
+    div.innerHTML = `
+      <div class="flex gap-2 max-w-[82%] sm:max-w-[72%] ${isOwn?'flex-row-reverse':''}">
+        ${avatarHtml}
+        <div class="min-w-0">
+          ${!isOwn ? `<div class="flex items-center gap-1.5 mb-0.5">${roleBadge}<span class="text-[10px] font-medium ${isAdmin?'text-gold-600':'text-lux-500'} cursor-pointer hover:text-gold-500 transition-colors" onclick="openProfile('${esc(m.username)}')">${esc(name)}</span><span class="text-[9px] text-lux-400">${time}</span></div>` : `<div class="flex items-center justify-end gap-1.5 mb-0.5"><span class="text-[9px] text-lux-400">${time}</span></div>`}
+          <div class="${isOwn?'msg-own':'msg-other'} rounded-2xl ${isOwn?'rounded-tr-md':'rounded-tl-md'} px-3.5 py-2.5">${contentHtml}</div>
+        </div>
+      </div>`;
+  }
+  box.appendChild(div);
+}
+
+function sendMsg() {
+  const input=$('msgInput'), text=input.value.trim();
+  hideMention();
+  if (pendingImg) { socket.emit('send_message',{content:pendingImg,type:'image'}); clearImg(); }
+  if (text) { socket.emit('send_message',{content:text,type:'text'}); input.value=''; }
+  input.focus();
+}
+
+// ===== @Mention =====
+let onlineUserList = [];
+let mentionActive = false;
+let mentionQuery = '';
+
+function toggleMention() {
+  if (mentionActive) { hideMention(); return; }
+  const input = $('msgInput');
+  input.value += '@';
+  input.focus();
+  showMention('');
+}
+
+function handleInput() {
+  const input = $('msgInput');
+  const val = input.value;
+  const cursorPos = input.selectionStart;
+  const before = val.substring(0, cursorPos);
+  const atMatch = before.match(/@([a-zA-Z0-9\u4e00-\u9fff]*)$/);
+  if (atMatch) {
+    showMention(atMatch[1].toLowerCase());
+  } else {
+    hideMention();
+  }
+}
+
+function handleInputKey(e) {
+  const dropdown = $('mentionDropdown');
+  if (!dropdown.classList.contains('hidden')) {
+    const items = dropdown.querySelectorAll('.mention-item');
+    const selected = dropdown.querySelector('.mention-selected');
+    let idx = Array.from(items).indexOf(selected);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (selected) selected.classList.remove('mention-selected');
+      idx = (idx + 1) % items.length;
+      items[idx].classList.add('mention-selected');
+      items[idx].scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (selected) selected.classList.remove('mention-selected');
+      idx = idx <= 0 ? items.length - 1 : idx - 1;
+      items[idx].classList.add('mention-selected');
+      items[idx].scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter' && selected) {
+      e.preventDefault();
+      selected.click();
+      return;
+    }
+    if (e.key === 'Escape') { hideMention(); return; }
+  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+}
+
+function showMention(query) {
+  mentionActive = true;
+  mentionQuery = query;
+  const dropdown = $('mentionDropdown');
+  const allItem = { username: 'all', nickname: '所有人', label: '所有人' };
+  let users = [allItem];
+  if (query) {
+    users = users.concat(onlineUserList.filter(u =>
+      u.username.toLowerCase().includes(query) || (u.nickname||'').toLowerCase().includes(query)
+    ));
+  } else {
+    users = users.concat(onlineUserList);
+  }
+
+  if (users.length === 0) { hideMention(); return; }
+
+  dropdown.innerHTML = users.map((u, i) => {
+    const isAll = u.username === 'all';
+    const name = u.nickname || u.username;
+    const initial = getInitial(name);
+    const highlight = isAll ? 'bg-gold-50' : '';
+    const icon = isAll
+      ? `<div class="w-7 h-7 rounded-lg bg-gold-100 flex items-center justify-center text-[10px] font-bold text-gold-700">ALL</div>`
+      : `<div class="w-7 h-7 rounded-lg bg-lux-100 flex items-center justify-center text-[10px] font-bold text-lux-600 overflow-hidden">${u.avatar ? `<img src="${esc(u.avatar)}" class="w-full h-full object-cover">` : initial}</div>`;
+    return `<div class="mention-item flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-lux-50 transition-colors ${highlight} ${i===0?'mention-selected':''}" onclick="selectMention('${esc(u.username)}','${esc(name)}')">
+      ${icon}
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-lux-800 truncate">${esc(name)}</p>
+        ${!isAll ? `<p class="text-[10px] text-lux-400">@${esc(u.username)}</p>` : `<p class="text-[10px] text-gold-600">提及所有人</p>`}
+      </div>
+    </div>`;
+  }).join('');
+  dropdown.classList.remove('hidden');
+}
+
+function hideMention() {
+  mentionActive = false;
+  $('mentionDropdown').classList.add('hidden');
+}
+
+function selectMention(username, name) {
+  const input = $('msgInput');
+  const val = input.value;
+  const cursorPos = input.selectionStart;
+  const before = val.substring(0, cursorPos);
+  const after = val.substring(cursorPos);
+  const newBefore = before.replace(/@([a-zA-Z0-9\u4e00-\u9fff]*)$/, `@${username} `);
+  input.value = newBefore + after;
+  input.selectionStart = input.selectionEnd = newBefore.length;
+  input.focus();
+  hideMention();
+}
+
+function parseMentions(text) {
+  if (!text) return esc(text);
+  let result = esc(text);
+  result = result.replace(/@all\b/g, '<span class="mention-all">@所有人</span>');
+  onlineUserList.forEach(u => {
+    const nick = u.nickname || u.username;
+    const re = new RegExp(`@${u.username}\\b`, 'g');
+    result = result.replace(re, `<span class="mention-tag">@${esc(nick)}</span>`);
+  });
+  // also match by nickname
+  onlineUserList.forEach(u => {
+    const nick = u.nickname || u.username;
+    if (nick !== u.username) {
+      const re = new RegExp(`@${nick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+      result = result.replace(re, `<span class="mention-tag">@${esc(nick)}</span>`);
+    }
+  });
+  return result;
+}
+
+function checkMention(text) {
+  if (!text || !currentUser) return;
+  const lower = text.toLowerCase();
+  if (lower.includes('@all') || lower.includes(`@${currentUser.username}`) || lower.includes(`@${currentUser.nickname}`)) {
+    toast(`📢 你被提及了！`);
+  }
+}
+
+function handleImg(e) {
+  const f=e.target.files[0]; if(!f) return;
+  if(f.size>5*1024*1024) return toast('圖片不能超過 5MB');
+  const reader=new FileReader();
+  reader.onload=ev=>{ pendingImg=ev.target.result; $('prevImg').src=pendingImg; $('imgPreview').classList.remove('hidden'); };
+  reader.readAsDataURL(f); e.target.value='';
+}
+function clearImg() { pendingImg=null; $('prevImg').src=''; $('imgPreview').classList.add('hidden'); }
+function scrollBottom() { const c=$('msgBox'); setTimeout(()=>c.scrollTop=c.scrollHeight,50); }
+function publishAnn() { if(currentUser.role!=='admin')return; socket.emit('update_announcement',{content:$('annInput').value.trim()}); }
+function updateAnn(c) {
+  const el=$('annContent');
+  el.textContent=c&&c.trim()?c:'暫無公告';
+  el.className=c&&c.trim()?'text-[11px] text-lux-300 flex-1 truncate':'text-[11px] text-lux-400 flex-1 truncate';
+}
+
+// ===== Settings =====
+async function openSettings() {
+  $('settingsOverlay').classList.remove('hidden'); document.body.style.overflow='hidden';
+  try {
+    const r=await fetch('/api/me'); const u=await r.json();
+    $('settingsDispName').textContent=u.nickname||u.username;
+    $('settingsUsername').textContent='@'+u.username;
+    $('setNickname').value=u.nickname||''; $('setBio').value=u.bio||'';
+    const l=getInitial(u.nickname||u.username);
+    $('settingsAvatarLetter').textContent=l;
+    if(u.avatar){$('settingsAvatarImg').src=u.avatar;$('settingsAvatarImg').classList.remove('hidden');$('settingsAvatarLetter').classList.add('hidden');}
+    else{$('settingsAvatarImg').classList.add('hidden');$('settingsAvatarLetter').classList.remove('hidden');}
+  } catch(e) {}
+}
+function closeSettings() { $('settingsOverlay').classList.add('hidden'); document.body.style.overflow=''; }
+
+async function uploadAvatar(e) {
+  const f=e.target.files[0]; if(!f) return;
+  if(f.size>2*1024*1024) return toast('頭像不能超過 2MB');
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    try {
+      const r=await fetch('/api/profile/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({avatar:ev.target.result})});
+      const d=await r.json(); if(!r.ok)return toast(d.error);
+      $('settingsAvatarImg').src=d.avatar;$('settingsAvatarImg').classList.remove('hidden');$('settingsAvatarLetter').classList.add('hidden');
+      toast('頭像已更新');
+    } catch(e){toast('上傳失敗');}
+  };
+  reader.readAsDataURL(f); e.target.value='';
+}
+
+async function saveNickname() {
+  const v=$('setNickname').value.trim(); if(!v)return toast('暱稱不能為空');
+  try {
+    const r=await fetch('/api/profile/nickname',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nickname:v})});
+    const d=await r.json(); if(!r.ok)return toast(d.error);
+    currentUser.nickname=d.nickname; $('settingsDispName').textContent=d.nickname; toast('暱稱已更新');
+  } catch(e){toast('更新失敗');}
+}
+
+async function saveBio() {
+  const v=$('setBio').value.trim();
+  try {
+    const r=await fetch('/api/profile/bio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:v})});
+    const d=await r.json(); if(!r.ok)return toast(d.error); toast('簡介已更新');
+  } catch(e){toast('更新失敗');}
+}
+
+async function savePassword() {
+  const old=$('setOldPass').value, nw=$('setNewPass').value;
+  if(!old||!nw)return toast('請填寫所有欄位');
+  try {
+    const r=await fetch('/api/profile/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oldPassword:old,newPassword:nw})});
+    const d=await r.json(); if(!r.ok)return toast(d.error);
+    $('setOldPass').value=''; $('setNewPass').value=''; toast('密碼已更新');
+  } catch(e){toast('更新失敗');}
+}
+
+// ===== Profile =====
+async function openProfile(username) {
+  $('profileOverlay').classList.remove('hidden'); document.body.style.overflow='hidden';
+  $('profileNick').textContent='載入中...'; $('profileUsername').textContent='';
+  $('profileBio').textContent=''; $('profileMsgCount').textContent='0';
+  $('profileMessages').innerHTML='<p class="text-xs text-lux-400">載入中...</p>';
+  try {
+    const r=await fetch(`/api/user/${username}`); const u=await r.json();
+    if(!r.ok){toast(u.error);closeProfile();return;}
+    const initial=getInitial(u.nickname||u.username);
+    $('profileAvatarLetter').textContent=initial;
+    if(u.avatar){$('profileAvatarImg').src=u.avatar;$('profileAvatarImg').classList.remove('hidden');$('profileAvatarLetter').classList.add('hidden');}
+    else{$('profileAvatarImg').classList.add('hidden');$('profileAvatarLetter').classList.remove('hidden');}
+    $('profileNick').textContent=u.nickname||u.username;
+    $('profileUsername').textContent='@'+u.username;
+    $('profileBio').textContent=u.bio||'這個人很懶，什麼都沒寫';
+    $('profileMsgCount').textContent=u.message_count||0;
+    $('profileRoleBadge').classList.toggle('hidden',u.role!=='admin');
+    if(u.is_online){$('profileOnlineDot').className='w-2 h-2 rounded-full bg-green-500';$('profileOnlineText').textContent='在線';$('profileOnlineText').className='text-xs text-green-600';}
+    else{$('profileOnlineDot').className='w-2 h-2 rounded-full bg-lux-300';$('profileOnlineText').textContent='離線';$('profileOnlineText').className='text-xs text-lux-400';}
+    const mr=await fetch(`/api/messages/${username}`); const msgs=await mr.json();
+    const c=$('profileMessages');
+    if(msgs.length===0){c.innerHTML='<p class="text-xs text-lux-400">還沒有訊息</p>';}
+    else{c.innerHTML=msgs.map(m=>{
+      const txt=m.type==='image'?'[圖片]':esc(m.content);
+      return `<div class="p-2.5 rounded-xl bg-lux-50 border border-lux-200"><p class="text-[11px] text-lux-700 line-clamp-2">${txt}</p><p class="text-[9px] text-lux-400 mt-1">${fmtTime(m.created_at)}</p></div>`;
+    }).join('');}
+  } catch(e){toast('載入失敗');closeProfile();}
+}
+function closeProfile() { $('profileOverlay').classList.add('hidden'); document.body.style.overflow=''; }
+
+checkSession();
+</script>
+</body>
+</html>
