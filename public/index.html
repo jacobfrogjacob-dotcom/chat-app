@@ -973,6 +973,9 @@ async function openProfile(username) {
 }
 function closeProfile() { $('profileOverlay').classList.add('hidden'); document.body.style.overflow=''; }
 
+checkSession();
+</script>
+
 <!-- Install PWA Modal -->
 <div id="installModal" class="fixed inset-0 z-[9999] hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
   <div class="bg-white rounded-3xl max-w-sm w-full p-8 text-center scale-in shadow-2xl">
@@ -996,8 +999,6 @@ function closeProfile() { $('profileOverlay').classList.add('hidden'); document.
   </div>
 </div>
 
-checkSession();
-</script>
 <script>
 // PWA install detection
 (function(){
