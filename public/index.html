@@ -530,7 +530,7 @@ function appendMsg(m) {
     let replyHtml = '';
     if (m.reply_to_id && m.reply_to_content) {
       const rNick = m.reply_to_nickname || '訊息已刪除';
-      const rText = m.type === 'image' ? '[圖片]' : esc(m.reply_to_content).substring(0, 80);
+      const rText = (m.reply_to_content && m.reply_to_content.startsWith('data:image')) ? '[圖片]' : esc(m.reply_to_content || '').substring(0, 80);
       replyHtml = `<div class="reply-quote"><span class="font-semibold text-gold-700">${esc(rNick)}</span><br>${rText}</div>`;
     }
 
